@@ -267,6 +267,62 @@ to see an extract of the logbook, or you can navigate to the logbook and filter 
 
 Note: When logbook is not enabled, messages are not recorded.
 
+Messages that Home Assistant *sends* are recorded too, against the same channel or
+direct message entity, so a logbook entity reads as a full conversation. The verb
+distinguishes the direction, because a logbook entry carries no event type:
+
+```
+«on my way» to Channel Primary        ← sent by Home Assistant
+«dinner?» by Kitchen Node (!a1b2c3d4) ← received off the mesh
+```
+
+The icon indicates encryption rather than direction: `mdi:message-lock` for direct
+messages, `mdi:message-arrow-right` for an outbound broadcast, `mdi:message` for an
+inbound one.
+
+The underlying `meshtastic_message_log` event carries two extra fields for this:
+
+| Field | Value |
+| --- | --- |
+| `direction` | `out` for messages this instance sent, `in` for received messages. |
+| `to_name` | Recipient of an outbound message: the channel name, or the peer node for a direct message. |
+
+Outbound events are fired with the context of the service call that sent the
+message, so a caller can correlate a message it sent with the entry it produced.
+
+Note: "sent" means the packet was accepted by the radio, not that it was delivered.
+A message whose acknowledgement times out is still recorded, because it was still
+transmitted. Messages sent through the [TCP proxy](#meshtastic-web-client) bypass
+this path and are not recorded.
+
+#### Reacting to sent messages
+
+To trigger automations on messages Home Assistant sends, use the
+`meshtastic_api_text_message_sent` event. It carries the same payload shape as
+`meshtastic_api_text_message`, with `from` and `gateway` both set to the sending
+gateway node:
+
+```yaml
+trigger:
+  event:
+    event_type: meshtastic_api_text_message_sent
+    event_data:
+      data:
+        from: 862525748
+        to:
+          node: null
+          channel: 0
+        gateway: 862525748
+        message: Sample Message
+```
+
+This is deliberately a separate event type from `meshtastic_api_text_message`, so
+that automations reacting to incoming messages — an auto-reply, for instance — do
+not also fire on the replies they send and feed back on themselves.
+
+The `message.sent` device trigger is unaffected: it continues to mean "this node
+sent a message that we observed on the mesh", not "Home Assistant sent a message".
+
 ### [Device Tracker](https://www.home-assistant.io/integrations/device_tracker/)
 
 For nodes selected as part of the configuration, their position is exposed as a device tracker.

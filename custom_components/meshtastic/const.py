@@ -105,6 +105,15 @@ EVENT_MESHTASTIC_DOMAIN_EVENT: EventType[MeshtasticDomainEventData] = EventType(
 EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_FROM_NAME: Final = "from_name"
 EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_PKI: Final = "pki"
 EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_MESSAGE: Final = "message"
+EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_DIRECTION: Final = "direction"
+EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_TO_NAME: Final = "to_name"
+
+
+class MeshtasticMessageDirection(enum.StrEnum):
+    """Whether a logged message was received off the mesh or sent by this instance."""
+
+    IN = "in"
+    OUT = "out"
 
 
 class MeshtasticDomainMessageLogEventData(TypedDict):

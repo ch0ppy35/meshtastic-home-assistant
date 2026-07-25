@@ -283,7 +283,12 @@ async def _setup_service_send_direct_message_handler(
                 return _SERVICE_CANT_HANDLE_RESPONSE
 
         text = call.data[ATTR_SERVICE_SEND_DIRECT_MESSAGE_DATA_MESSAGE]
-        await client.send_text(text=text, destination_id=to_node_id, want_ack=call.data[ATTR_SERVICE_DATA_ACK])
+        await client.send_text(
+            text=text,
+            destination_id=to_node_id,
+            want_ack=call.data[ATTR_SERVICE_DATA_ACK],
+            context=call.context,
+        )
         return None
 
     _service_handlers[entry.entry_id][SERVICE_SEND_DIRECT_MESSAGE] = handle_service_call
@@ -314,7 +319,12 @@ async def _setup_service_broadcast_channel_message_handler(
         text = call.data[ATTR_SERVICE_BROADCAST_CHANNEL_MESSAGE_DATA_MESSAGE]
         channel_index = channel_entity.extra_state_attributes[STATE_ATTRIBUTE_CHANNEL_INDEX]
 
-        await client.send_text(text=text, channel_index=channel_index, want_ack=call.data[ATTR_SERVICE_DATA_ACK])
+        await client.send_text(
+            text=text,
+            channel_index=channel_index,
+            want_ack=call.data[ATTR_SERVICE_DATA_ACK],
+            context=call.context,
+        )
         return None
 
     _service_handlers[entry.entry_id][SERVICE_BROADCAST_CHANNEL_MESSAGE] = handle_service_call
@@ -357,6 +367,7 @@ async def _setup_service_send_text_handler(
             destination_id=to,
             channel_index=channel_index,
             want_ack=call.data[ATTR_SERVICE_DATA_ACK],
+            context=call.context,
         )
 
     _service_handlers[entry.entry_id][SERVICE_SEND_TEXT] = await _build_default_handler(hass, client, handler)

@@ -1,6 +1,18 @@
 # Strictly for tests
+
+# Pinned to the release built against the homeassistant version in requirements.txt. Left
+# unpinned, pip picks the newest release, which pins a far newer Home Assistant and makes the
+# two requirements files unsatisfiable together.
+pytest-homeassistant-custom-component==0.13.181
+
+# Home Assistant 2024.11.0 pulls in acme (via hass-nabucasa), which requires josepy>=1.13.0
+# with no upper bound. josepy 2.0 removed ComparableX509, which acme still imports, so a fresh
+# unconstrained install of a Home Assistant this old now fails on import.
+josepy<2
+
+# All four come in with the plugin above; pinned to nothing and listed only so that invoking
+# them directly is intentional rather than a side effect of a transitive dependency.
 coverage
 pytest
 pytest-asyncio
 pytest-cov
-pytest-homeassistant-custom-component
