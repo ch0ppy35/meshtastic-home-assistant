@@ -36,7 +36,7 @@ For more details, see check the [documentation](#documentation).
 
 ### Recommended: [HACS](https://www.hacs.xyz)
 
-1. Add this repository as a custom repository to HACS: [![Add Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=meshtastic&repository=home-assistant&category=integration)
+1. Add this repository as a custom repository to HACS: [![Add Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ch0ppy35&repository=meshtastic-home-assistant&category=integration)
 2. Use HACS to install the integration.
 3. Restart Home Assistant.
 4. Set up the integration using the UI: [![Add Integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=meshtastic)
@@ -367,9 +367,9 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 
 ***
 
-[commits-shield]: https://img.shields.io/github/commit-activity/y/meshtastic/home-assistant.svg?style=for-the-badge
-[commits]: https://github.com/meshtastic/home-assistant/commits/main
-[license-shield]: https://img.shields.io/github/license/meshtastic/home-assistant.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/meshtastic/home-assistant.svg?style=for-the-badge
-[releases]: https://github.com/meshtastic/home-assistant/releases
+[commits-shield]: https://img.shields.io/github/commit-activity/y/ch0ppy35/meshtastic-home-assistant.svg?style=for-the-badge
+[commits]: https://github.com/ch0ppy35/meshtastic-home-assistant/commits/main
+[license-shield]: https://img.shields.io/github/license/ch0ppy35/meshtastic-home-assistant.svg?style=for-the-badge
+[releases-shield]: https://img.shields.io/github/release/ch0ppy35/meshtastic-home-assistant.svg?style=for-the-badge
+[releases]: https://github.com/ch0ppy35/meshtastic-home-assistant/releases
 
