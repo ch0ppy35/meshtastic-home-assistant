@@ -25,6 +25,14 @@ ignore = [
     "D107", # Missing docstring (currently no distributed library)
 ]
 
+[lint.per-file-ignores]
+"tests/**" = [
+    "S101", # asserts are how tests assert
+    "INP001", # pytest collects `tests` without it being a package
+    "ARG001", # fixtures are requested by argument even when unused (e.g. enable_custom_integrations)
+    "PLR0913", # parametrised tests take one argument per parameter
+]
+
 [lint.flake8-pytest-style]
 fixture-parentheses = false
 

@@ -1,0 +1,39 @@
+name: "Test"
+
+on:
+  push:
+    branches:
+      - "main"
+      - "dev"
+  pull_request:
+    branches:
+      - "main"
+
+jobs:
+  pytest:
+    name: "Pytest"
+    runs-on: "ubuntu-latest"
+    steps:
+        - name: "Checkout the repository"
+          uses: "actions/checkout@v6.0.2"
+
+        - name: "Set up Python"
+          uses: actions/setup-python@v6.2.0
+          with:
+            python-version: "3.12"
+            cache: "pip"
+
+        # requirements.protobuf.txt is what brings in the protobuf runtime the vendored
+        # aiomeshtastic package imports. The generated *_pb2.py modules are committed, so
+        # the protobufs submodule is only needed to regenerate them, not to run the tests.
+        - name: "Install requirements"
+          run: >
+            python3 -m pip install
+            -r requirements.txt
+            -r requirements.test.txt
+            -r requirements.protobuf.txt
+
+        # No radio and no running Home Assistant: Home Assistant is started in-process and
+        # sockets are blocked for the whole suite. Nothing here needs hardware.
+        - name: "Test"
+          run: python3 -m pytest

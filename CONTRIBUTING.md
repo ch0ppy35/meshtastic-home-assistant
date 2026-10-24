@@ -48,6 +48,30 @@ Use [Ruff](https://docs.astral.sh/ruff/) to make sure the code follows the style
 
 ## Test your code modification
 
+### Automated tests
+
+The test suite needs no Meshtastic hardware and no running Home Assistant. Home Assistant is
+started in-process by
+[pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component),
+and the radio is stood in for. Sockets are blocked for the whole suite, so a test cannot reach
+a real device even by accident — see `tests/test_hermetic.py`.
+
+Work in a virtual environment; installing Home Assistant into a system Python tends to end
+badly. Python 3.12 matches the `target-version` in `.ruff.toml`.
+
+```shell
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r requirements.test.txt -r requirements.protobuf.txt
+.venv/bin/pytest
+```
+
+`tests/test_send_end_to_end.py` covers the outbound path the way a dashboard drives it, by
+calling the real services and reading the result back out of the recorder through the logbook.
+When changing how messages are sent or logged, prefer extending that file over testing against
+a device: a check that needs a node on the desk is one nobody else can run.
+
+### Manual testing
+
 This custom component is based on [integration_blueprint template](https://github.com/ludeeus/integration_blueprint).
 
 It comes with development environment in a container, easy to launch
@@ -55,6 +79,9 @@ if you use Visual Studio Code. With this container you will have a stand alone
 Home Assistant instance running and already configured with the included
 [`configuration.yaml`](./config/configuration.yaml)
 file.
+
+Use it for the things automated tests cannot judge — how something looks and feels in the UI,
+and whether real firmware behaves as expected. It is not where correctness gets established.
 
 ## License
 

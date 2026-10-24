@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from types import MappingProxyType, TracebackType
 
     from google.protobuf.message import Message
-    from homeassistant.core import HomeAssistant
+    from homeassistant.core import Context, HomeAssistant
 
     from .aiomeshtastic.interface import MeshNode, TelemetryType
     from .aiomeshtastic.packet import Packet
@@ -61,6 +61,10 @@ EVENT_MESHTASTIC_API_NODE_UPDATED = EVENT_MESHTASTIC_API_BASE + "_node_updated"
 EVENT_MESHTASTIC_API_TELEMETRY = EVENT_MESHTASTIC_API_BASE + "_telemetry"
 EVENT_MESHTASTIC_API_PACKET = EVENT_MESHTASTIC_API_BASE + "_packet"
 EVENT_MESHTASTIC_API_TEXT_MESSAGE = EVENT_MESHTASTIC_API_BASE + "_text_message"
+# Deliberately a distinct event type from EVENT_MESHTASTIC_API_TEXT_MESSAGE: automations
+# that react to incoming messages must not also fire for messages this instance sends,
+# otherwise auto-reply automations feed back on themselves.
+EVENT_MESHTASTIC_API_TEXT_MESSAGE_SENT = EVENT_MESHTASTIC_API_BASE + "_text_message_sent"
 EVENT_MESHTASTIC_API_POSITION = EVENT_MESHTASTIC_API_BASE + "_position"
 
 ATTR_EVENT_MESHTASTIC_API_CONFIG_ENTRY_ID = "config_entry_id"
@@ -85,6 +89,27 @@ class MeshtasticApiClientCommunicationError(
     MeshtasticApiClientError,
 ):
     """Exception to indicate a communication error."""
+
+
+def _resolve_text_destination(destination_id: int | str | None, channel_index: int | None) -> dict[str, int | None]:
+    """
+    Describe an outgoing text destination the same way incoming messages are described.
+
+    Mirrors the destination rules of ``MeshInterface.send_text_message`` so that the
+    ``to`` mapping is shape-identical to the one built for received messages.
+    """
+    if destination_id is None or destination_id == MeshInterface.BROADCAST_ADDR:
+        to_node = MeshInterface.BROADCAST_NUM
+    elif isinstance(destination_id, str):
+        to_node = int(destination_id[1:], 16)
+    else:
+        to_node = int(destination_id)
+
+    if to_node == MeshInterface.BROADCAST_NUM:
+        # An unset channel index leaves the protobuf default of 0, i.e. the primary channel.
+        return {"node": None, "channel": channel_index if channel_index is not None else 0}
+
+    return {"node": to_node, "channel": None}
 
 
 class MeshtasticApiClient:
@@ -221,6 +246,7 @@ class MeshtasticApiClient:
         *,
         want_ack: bool = False,
         channel_index: int | None = None,
+        context: Context | None = None,
     ) -> bool:
         try:
             await asyncio.wait_for(
@@ -233,11 +259,38 @@ class MeshtasticApiClient:
                 timeout=30,
             )
         except TimeoutError:
+            # The timeout is on the acknowledgement, not the transmission: the packet was
+            # already handed to the radio, so it still belongs in the message log.
+            self._fire_text_message_sent(text, destination_id, channel_index, context)
             return False
         except Exception as e:
             raise MeshtasticApiClientError from e
         else:
+            self._fire_text_message_sent(text, destination_id, channel_index, context)
             return True
+
+    def _fire_text_message_sent(
+        self,
+        text: str,
+        destination_id: int | str | None,
+        channel_index: int | None,
+        context: Context | None,
+    ) -> None:
+        own_node_num = self.get_own_node().get("num")
+        if own_node_num is None:
+            _LOGGER.debug("Not reporting sent message, own node is not known yet")
+            return
+
+        event_data = self._build_event_data(
+            own_node_num,
+            {
+                "from": own_node_num,
+                "to": _resolve_text_destination(destination_id, channel_index),
+                "gateway": own_node_num,
+                "message": text,
+            },
+        )
+        self._hass.bus.async_fire(EVENT_MESHTASTIC_API_TEXT_MESSAGE_SENT, event_data, context=context)
 
     @property
     def metadata(self) -> Mapping[str, Any]:

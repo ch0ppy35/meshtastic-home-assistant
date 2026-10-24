@@ -18,24 +18,28 @@ from homeassistant.components.logbook.const import (
     LOGBOOK_ENTRY_NAME,
 )
 from homeassistant.const import ATTR_DEVICE_ID, ATTR_ENTITY_ID, CONF_DEVICE_ID, CONF_ENTITY_ID, CONF_TYPE
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Context, Event, HomeAssistant, callback
 
 from .api import (
     ATTR_EVENT_MESHTASTIC_API_CONFIG_ENTRY_ID,
     ATTR_EVENT_MESHTASTIC_API_DATA,
     EVENT_MESHTASTIC_API_TEXT_MESSAGE,
+    EVENT_MESHTASTIC_API_TEXT_MESSAGE_SENT,
 )
 from .const import (
     DOMAIN,
     EVENT_MESHTASTIC_DOMAIN_EVENT,
     EVENT_MESHTASTIC_DOMAIN_EVENT_DATA_ATTR_MESSAGE,
     EVENT_MESHTASTIC_DOMAIN_MESSAGE_LOG,
+    EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_DIRECTION,
     EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_FROM_NAME,
     EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_MESSAGE,
     EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_PKI,
+    EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_TO_NAME,
     MeshtasticDomainEventData,
     MeshtasticDomainEventType,
     MeshtasticDomainMessageLogEventData,
+    MeshtasticMessageDirection,
 )
 from .entity import (
     GatewayChannelEntity,
@@ -45,7 +49,26 @@ from .entity import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from .api import MeshtasticApiClient
     from .data import MeshtasticConfigEntry
+
+
+def resolve_to_name(
+    entity_registry: er.EntityRegistry,
+    client: MeshtasticApiClient,
+    to: Mapping[str, Any],
+    entity_id: str,
+) -> str:
+    """Name the recipient of an outgoing message: the peer node for a DM, else the channel."""
+    if (to_node_id := to.get("node", None)) is not None:
+        if (node_info := client.get_node_info(int(to_node_id))) is not None:
+            return f"{node_info.long_name} ({node_info.user_id})"
+        return f"!{int(to_node_id):08x}"
+
+    registry_entry = entity_registry.async_get(entity_id)
+    if registry_entry is None:
+        return entity_id
+    return registry_entry.name or registry_entry.original_name or entity_id
 
 
 @callback
@@ -68,16 +91,25 @@ def async_describe_events(
             device_name = "?"
 
         message = event.data.get(EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_MESSAGE)
-        icon = (
-            "mdi:message-lock"
-            if event.data.get(EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_PKI, False)
-            else "mdi:message"
+        pki = event.data.get(EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_PKI, False)
+        direction = event.data.get(
+            EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_DIRECTION, MeshtasticMessageDirection.IN
         )
+
+        # A logbook entry carries no event type, so the direction has to be readable from the
+        # rendered text. The verb carries it and the icon keeps carrying the encryption state.
+        if direction == MeshtasticMessageDirection.OUT:
+            to_name = event.data.get(EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_TO_NAME) or entity_name or "?"
+            entry_message = f"«{message}» to {to_name}"
+            icon = "mdi:message-lock" if pki else "mdi:message-arrow-right"
+        else:
+            entry_message = f"«{message}» by {device_name}"
+            icon = "mdi:message-lock" if pki else "mdi:message"
 
         return {
             LOGBOOK_ENTRY_DOMAIN: DOMAIN,
             LOGBOOK_ENTRY_NAME: entity_name,
-            LOGBOOK_ENTRY_MESSAGE: f"«{message}» by {device_name}",
+            LOGBOOK_ENTRY_MESSAGE: entry_message,
             LOGBOOK_ENTRY_ENTITY_ID: event.data[ATTR_ENTITY_ID],
             LOGBOOK_ENTRY_CONTEXT_ID: event.context_id,
             LOGBOOK_ENTRY_ICON: icon,
@@ -98,6 +130,10 @@ async def async_setup_message_logger(hass: HomeAssistant, entry: MeshtasticConfi
         to_channel_entity_id: str,
         to_dm_entity_id: str,
         message: str,
+        *,
+        direction: MeshtasticMessageDirection = MeshtasticMessageDirection.IN,
+        to_name: str | None = None,
+        context: Context | None = None,
     ) -> None:
         if (node_info := entry.runtime_data.client.get_node_info(int(from_node_id))) is not None:
             from_name = f"{node_info.long_name} ({node_info.user_id})"
@@ -109,8 +145,17 @@ async def async_setup_message_logger(hass: HomeAssistant, entry: MeshtasticConfi
             EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_FROM_NAME: from_name,
             EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_PKI: bool(to_dm_entity_id),
             EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_MESSAGE: message,
+            EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_DIRECTION: direction,
         }
-        hass.bus.async_fire(event_type=EVENT_MESHTASTIC_DOMAIN_MESSAGE_LOG, event_data=message_log_event_data)
+        if to_name is not None:
+            message_log_event_data[EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_TO_NAME] = to_name
+        # Passing the originating context through lets consumers correlate a message they
+        # sent via a service call with the log entry it produced.
+        hass.bus.async_fire(
+            event_type=EVENT_MESHTASTIC_DOMAIN_MESSAGE_LOG,
+            event_data=message_log_event_data,
+            context=context,
+        )
 
     async def _on_text_message(event: Event) -> None:
         event_data = deepcopy(event.data)
@@ -168,7 +213,49 @@ async def async_setup_message_logger(hass: HomeAssistant, entry: MeshtasticConfi
                 to_channel_entity_id,
                 to_dm_entity_id,
                 message,
+                direction=MeshtasticMessageDirection.IN,
             )
+
+    async def _on_text_message_sent(event: Event) -> None:
+        event_data = deepcopy(event.data)
+        config_entry_id = event_data.pop(ATTR_EVENT_MESHTASTIC_API_CONFIG_ENTRY_ID, None)
+        if config_entry_id != entry.entry_id:
+            return
+
+        data = event_data.get(ATTR_EVENT_MESHTASTIC_API_DATA, None)
+        if data is None:
+            return
+
+        # The sender is our own gateway, so the same helpers that resolve an incoming
+        # message's target entity resolve the outgoing one.
+        gateway_node_id = data["gateway"]
+        from_device = device_registry.async_get_device(identifiers={(DOMAIN, str(gateway_node_id))})
+        to = data["to"]
+        to_device, to_dm_entity_id = extract_device_and_entity_from_node(config_entry_id, gateway_node_id, to)
+        _, to_channel_entity_id = extract_device_and_entity_from_channel(
+            config_entry_id, gateway_node_id, to, to_device
+        )
+
+        if not (to_dm_entity_id or to_channel_entity_id):
+            return
+
+        _publish_message_log_event(
+            hass,
+            entry,
+            from_device.id if from_device is not None else None,
+            gateway_node_id,
+            to_channel_entity_id,
+            to_dm_entity_id,
+            data["message"],
+            direction=MeshtasticMessageDirection.OUT,
+            to_name=resolve_to_name(
+                entity_registry,
+                entry.runtime_data.client,
+                to,
+                to_dm_entity_id or to_channel_entity_id,
+            ),
+            context=event.context,
+        )
 
     def extract_device_and_entity_from_channel(
         config_entry_id: str, gateway_node_id: int, to: Mapping[str, Any], to_device: dr.DeviceEntry | None
@@ -193,4 +280,12 @@ async def async_setup_message_logger(hass: HomeAssistant, entry: MeshtasticConfi
             to_dm_entity_id = None
         return to_device, to_dm_entity_id
 
-    return hass.bus.async_listen(EVENT_MESHTASTIC_API_TEXT_MESSAGE, _on_text_message)
+    cancel_received = hass.bus.async_listen(EVENT_MESHTASTIC_API_TEXT_MESSAGE, _on_text_message)
+    cancel_sent = hass.bus.async_listen(EVENT_MESHTASTIC_API_TEXT_MESSAGE_SENT, _on_text_message_sent)
+
+    @callback
+    def cancel() -> None:
+        cancel_received()
+        cancel_sent()
+
+    return cancel
