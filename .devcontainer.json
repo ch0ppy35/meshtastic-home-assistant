@@ -1,5 +1,5 @@
 {
-    "name": "meshtastic/home-assistant",
+    "name": "ch0ppy35/meshtastic-home-assistant",
     "image": "mcr.microsoft.com/devcontainers/python:3.12",
     "postCreateCommand": "scripts/setup",
     "forwardPorts": [
